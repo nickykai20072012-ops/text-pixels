@@ -24,6 +24,7 @@
   color-scheme: dark;
 }
 html, body { background: var(--bg); color: var(--fg); }
+[hidden] { display: none !important; }
 body { font-family: var(--font-ui); font-size: 14px; padding-inline: 16px; padding-block: 16px 32px; }
 .wrap { max-width: 1320px; margin: 0 auto; display: grid; gap: 16px; }
 header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
@@ -204,7 +205,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
           <button id="frame">Save frame</button>
         </div>
         <div class="bar"><i id="prog"></i></div>
-        <p class="hint build" id="build">Build 21</p>
+        <p class="hint build" id="build">Build 22</p>
         <p class="hint" id="status">Export records the clip in real time with its audio.</p>
       </div>
     </aside>
