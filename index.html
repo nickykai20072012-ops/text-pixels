@@ -53,6 +53,8 @@ header p { margin: 0; color: var(--muted); }
 .ctl label { display: flex; justify-content: space-between; gap: 8px; font-weight: 500; }
 .ctl output { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--accent); font-size: 12px; }
 .hint { color: var(--muted); font-size: 12px; margin: 0; }
+.credit { color: var(--muted); font-size: 12px; text-align: center; padding-top: 8px; }
+.credit strong { color: var(--fg); font-weight: 600; }
 .check { display: flex; gap: 8px; align-items: center; font-weight: 500; cursor: pointer; }
 .check input { accent-color: var(--accent); width: 16px; height: 16px; }
 
@@ -190,6 +192,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       </div>
     </aside>
   </div>
+  <footer class="credit">Made by <strong>Nickolas Heise</strong></footer>
 </div>
 
 <script type="application/json" id="seg-model">{
