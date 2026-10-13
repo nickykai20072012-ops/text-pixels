@@ -618,28 +618,48 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   }
 
   let exporting = false, dirty = true, videoLoading = false, buffering = false, awaitingMask = true, lastMode = 0;
+  let maskWaitStart = 0, segBusySince = 0, busyDismissed = null, pendingMsg = null, pendingSince = 0;
   vid.addEventListener("waiting", () => { buffering = true; });
   ["playing", "canplay", "seeked", "pause"].forEach(ev => vid.addEventListener(ev, () => { buffering = false; }));
   // Spinner over the monitor whenever something is loading, so a still frame never looks broken.
   let busyShown = null;
   function updateBusy() {
-    if (vals.mode !== lastMode) { if (vals.mode > 0) awaitingMask = true; lastMode = vals.mode; }
+    const now = performance.now();
+    if (vals.mode !== lastMode) { if (vals.mode > 0) { awaitingMask = true; maskWaitStart = now; } lastMode = vals.mode; }
+    // A detection pass that never returns shouldn't freeze person mode: let the next frame try again.
+    if (segBusy && segBusySince && now - segBusySince > 10000) { segBusy = false; segBusySince = 0; }
+    const vidPending = hasVideo && !vid.error && vid.readyState < 2;
     let msg = null;
     if (exporting) msg = null;
     else if (videoLoading) msg = "Loading video…";
+    else if (vidPending) msg = vid.paused ? "Tap ▶ below to start the video" : "Loading video…";
     else if (vals.mode > 0 && !segReady && !segFailed) msg = $("maskHint").textContent.replace(/\.$/, "") || "Loading the person detector…";
-    else if (vals.mode > 0 && segReady && awaitingMask) msg = "Finding the person…";
-    else if (buffering && hasVideo && !vid.paused) msg = "Buffering…";
+    else if (vals.mode > 0 && segReady && awaitingMask && now - maskWaitStart < 15000) msg = "Finding the person…";
+    else if (buffering && hasVideo && !vid.paused && vid.readyState < 3) msg = "Buffering…";
+    // Brief hiccups (a loop point, a busy frame) shouldn't flash the spinner: wait until it's lasted a moment.
+    const instant = msg && /detector|model|Preparing/.test(msg);
+    if (msg !== pendingMsg) { pendingMsg = msg; pendingSince = now; }
+    if (msg && !instant && now - pendingSince < 600) msg = busyShown;   // not settled yet: keep what's on screen
+    if (busyDismissed) {
+      if (msg === busyDismissed) msg = null;           // tapped away: stay hidden for this message
+      else busyDismissed = null;                       // something changed: allow it again
+    }
     if (msg === busyShown) return;
     busyShown = msg;
     $("busy").hidden = !msg;
     if (msg) $("busyText").textContent = msg;
   }
+  $("busy").addEventListener("click", () => { busyDismissed = busyShown; $("busy").hidden = true; busyShown = null; });
   document.addEventListener("input", () => { dirty = true; });
   document.addEventListener("change", () => { dirty = true; });
   vid.addEventListener("seeked", () => { dirty = true; });
   vid.addEventListener("loadeddata", () => { dirty = true; });
   function render(now) {
+    requestAnimationFrame(render);
+    try { renderFrame(now); } catch (e) { console.warn("render:", e && e.message); }
+    try { updateBusy(); } catch (e) { console.warn("busy:", e && e.message); }
+  }
+  function renderFrame(now) {
     if (!exporting) {
       const t = now / 1000;
       let source = null;
@@ -649,10 +669,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
         if (masking()) {
           // Frame-locked: grab this frame, find the person in it, then show that same frame with its own mask.
           if (!segBusy) {
-            segBusy = true;
+            segBusy = true; segBusySince = performance.now();
             const s = snapshot(source);
             segment(s).then(() => { if (!exporting) { drawFrame(s, performance.now() / 1000, true); awaitingMask = false; } })
-              .finally(() => { segBusy = false; });
+              .finally(() => { segBusy = false; segBusySince = 0; });
           }
         } else {
           const idle = source === vid && vid.paused && vals.shuffle === 0 && !dirty;
@@ -661,8 +681,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       }
       if (hasVideo && !seeking) updateTransport();
     }
-    updateBusy();
-    requestAnimationFrame(render);
   }
 
   // ---------- video loading ----------
@@ -685,10 +703,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     setupAudio();
     if (vid.src) URL.revokeObjectURL(vid.src);
     vid.src = URL.createObjectURL(f);
-    videoLoading = true; awaitingMask = true;
+    videoLoading = true; awaitingMask = true; maskWaitStart = performance.now();
     $("fileName").textContent = f.name;
     vid.onloadedmetadata = () => {
-      hasVideo = true; resetSeg();
+      hasVideo = true; videoLoading = false; resetSeg();
       if (segReady) warmUp();
       setSize(vid.videoWidth, vid.videoHeight);
       $("tag").textContent = `${vid.videoWidth}×${vid.videoHeight}`;
@@ -697,7 +715,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       vid.play().catch(() => {});
       status("Loaded. Tune the look, then export.");
     };
-    vid.addEventListener("loadeddata", () => { videoLoading = false; }, { once: true });
     vid.onerror = () => { videoLoading = false; status("This browser can't decode that video. Try an H.264 MP4.", true); };
   }
   $("file").addEventListener("change", e => loadFile(e.target.files[0]));
