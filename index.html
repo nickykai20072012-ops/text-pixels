@@ -40,6 +40,10 @@ header > p { margin: 0; color: var(--muted); }
 #out { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; }
 .tag { position: absolute; top: 10px; left: 10px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; background: rgba(13,16,20,.8); color: var(--muted); padding: 4px 8px; border-radius: 3px; }
 .tag.rec { color: var(--rec); }
+.busy { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; background: rgba(13,16,20,.55); color: var(--fg); font-family: var(--font-mono); font-size: 12px; letter-spacing: .04em; text-align: center; padding: 16px; }
+.spin { width: 44px; height: 44px; border-radius: 50%; border: 4px solid rgba(255,255,255,.18); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2.4s; } }
 .tag.rec::before { content: "● "; }
 
 .transport { display: flex; gap: 10px; align-items: center; }
@@ -101,6 +105,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       <div class="monitor" id="monitor">
         <canvas id="out" width="1280" height="720"></canvas>
         <span class="tag" id="tag">Demo pattern · drop a video</span>
+        <div class="busy" id="busy" hidden role="status" aria-live="polite">
+          <div class="spin" aria-hidden="true"></div>
+          <span id="busyText">Loading…</span>
+        </div>
       </div>
       <div class="transport">
         <button class="icon" id="play" disabled aria-label="Play or pause">▶</button>
@@ -609,7 +617,24 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
-  let exporting = false, dirty = true;
+  let exporting = false, dirty = true, videoLoading = false, buffering = false, awaitingMask = true, lastMode = 0;
+  vid.addEventListener("waiting", () => { buffering = true; });
+  ["playing", "canplay", "seeked", "pause"].forEach(ev => vid.addEventListener(ev, () => { buffering = false; }));
+  // Spinner over the monitor whenever something is loading, so a still frame never looks broken.
+  let busyShown = null;
+  function updateBusy() {
+    if (vals.mode !== lastMode) { if (vals.mode > 0) awaitingMask = true; lastMode = vals.mode; }
+    let msg = null;
+    if (exporting) msg = null;
+    else if (videoLoading) msg = "Loading video…";
+    else if (vals.mode > 0 && !segReady && !segFailed) msg = $("maskHint").textContent.replace(/\.$/, "") || "Loading the person detector…";
+    else if (vals.mode > 0 && segReady && awaitingMask) msg = "Finding the person…";
+    else if (buffering && hasVideo && !vid.paused) msg = "Buffering…";
+    if (msg === busyShown) return;
+    busyShown = msg;
+    $("busy").hidden = !msg;
+    if (msg) $("busyText").textContent = msg;
+  }
   document.addEventListener("input", () => { dirty = true; });
   document.addEventListener("change", () => { dirty = true; });
   vid.addEventListener("seeked", () => { dirty = true; });
@@ -626,7 +651,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
           if (!segBusy) {
             segBusy = true;
             const s = snapshot(source);
-            segment(s).then(() => { if (!exporting) drawFrame(s, performance.now() / 1000, true); })
+            segment(s).then(() => { if (!exporting) { drawFrame(s, performance.now() / 1000, true); awaitingMask = false; } })
               .finally(() => { segBusy = false; });
           }
         } else {
@@ -636,6 +661,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       }
       if (hasVideo && !seeking) updateTransport();
     }
+    updateBusy();
     requestAnimationFrame(render);
   }
 
@@ -659,6 +685,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     setupAudio();
     if (vid.src) URL.revokeObjectURL(vid.src);
     vid.src = URL.createObjectURL(f);
+    videoLoading = true; awaitingMask = true;
     $("fileName").textContent = f.name;
     vid.onloadedmetadata = () => {
       hasVideo = true; resetSeg();
@@ -670,7 +697,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       vid.play().catch(() => {});
       status("Loaded. Tune the look, then export.");
     };
-    vid.onerror = () => status("This browser can't decode that video. Try an H.264 MP4.", true);
+    vid.addEventListener("loadeddata", () => { videoLoading = false; }, { once: true });
+    vid.onerror = () => { videoLoading = false; status("This browser can't decode that video. Try an H.264 MP4.", true); };
   }
   $("file").addEventListener("change", e => loadFile(e.target.files[0]));
   const mon = $("monitor");
