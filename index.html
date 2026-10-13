@@ -207,7 +207,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
           <button id="frame">Save frame</button>
         </div>
         <div class="bar"><i id="prog"></i></div>
-        <p class="hint build" id="build">Build 19</p>
+        <p class="hint build" id="build">Build 20</p>
         <p class="hint" id="status">Export records the clip in real time with its audio.</p>
       </div>
     </aside>
@@ -300,21 +300,32 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]));
 
   // ---------- person detection (Robust Video Matting, full body, run through TF.js on the GPU) ----------
-  const TF_URL = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js";
+  const TF_URL = "vendor/tf.min.js";
   let model = null, segReady = false, segBusy = false, segLoading = null, segFailed = false;
   let rec = null, prevMask = null, maskBytes = new Uint8Array(4);
   let pose = null, kps = null, poseTick = 0;
   const segIn = document.createElement("canvas"), segInCtx = segIn.getContext("2d", { willReadFrequently: true });
   const limbCanvas = document.createElement("canvas"), limbCtx = limbCanvas.getContext("2d", { willReadFrequently: true });
-  function loadScript(src) {
+  function loadScript(src, ms = 45000) {
     return new Promise((res, rej) => {
       const s = document.createElement("script");
-      s.src = src; s.crossOrigin = "anonymous"; s.onload = res; s.onerror = () => rej(new Error("couldn't load TensorFlow.js"));
+      const timer = setTimeout(() => rej(new Error("timed out loading " + src.split("/").pop())), ms);
+      s.src = src; s.crossOrigin = "anonymous";
+      s.onload = () => { clearTimeout(timer); res(); };
+      s.onerror = () => { clearTimeout(timer); rej(new Error("couldn't load " + src.split("/").pop())); };
       document.head.appendChild(s);
     });
   }
+  let tfLoading = null;
+  function loadTf() {
+    if (window.tf) return Promise.resolve();
+    if (!tfLoading) tfLoading = loadScript(TF_URL).catch(e => { tfLoading = null; throw e; });
+    return tfLoading;
+  }
+  // Give any step a deadline so a stalled network or GPU can never leave the page waiting forever.
+  const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(what + " timed out")), ms))]);
   async function fetchBytes(url, label) {
-    const r = await fetch(url);
+    const r = await withTimeout(fetch(url), 30000, "connecting to " + url);
     if (!r.ok) throw new Error("couldn't download " + url + " (" + r.status + ")");
     // content-length can be the compressed size (GitHub Pages gzips), so it's only a progress hint:
     // collect the chunks as they come and join them at the end.
@@ -323,7 +334,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     const rd = r.body.getReader(), parts = [];
     let got = 0;
     for (;;) {
-      const { done, value } = await rd.read();
+      const { done, value } = await withTimeout(rd.read(), 30000, "downloading " + url);
       if (done) break;
       parts.push(value); got += value.length;
       $("maskHint").textContent = "Downloading the " + label + "… " +
@@ -344,7 +355,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       bin = new Uint8Array(raw.length);
       for (let i = 0; i < raw.length; i++) bin[i] = raw.charCodeAt(i);
     } else {
-      j = await (await fetch("models/" + id + ".json")).json();
+      j = await withTimeout(fetch("models/" + id + ".json").then(r => { if (!r.ok) throw new Error("couldn't download models/" + id + ".json (" + r.status + ")"); return r.json(); }), 30000, "loading models/" + id + ".json");
       bin = await fetchBytes("models/" + id + ".bin", label);
     }
     return tf.loadGraphModel(tf.io.fromMemory({ modelTopology: j.modelTopology, weightSpecs: j.weightsManifest[0].weights, weightData: bin.buffer }));
@@ -367,7 +378,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     hint.style.color = ""; hint.textContent = "Loading the person detector…";
     let stage = "loading TensorFlow.js";
     segLoading = (async () => {
-      if (!window.tf) await loadScript(TF_URL);
+      $("maskHint").textContent = "Loading the person detector…";
+      await loadTf();
       stage = "starting the GPU backend";
       try { await tf.setBackend("webgl"); } catch (e) { await tf.setBackend("cpu"); }
       // Phones: half-precision textures (less memory and bandwidth) and a cap on cached GPU textures.
@@ -382,7 +394,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       pose = await loadGraph("pose", "pose model");
       stage = "warming up";
       hint.textContent = "Preparing the person detector…";
-      await warmUp();
+      await withTimeout(warmUp(), 90000, "preparing the detector");
       segReady = true;
       hint.textContent = "Person detector ready. Raise Sensitivity or Grow mask if limbs drop out; raise Hold if it flickers.";
     })().catch(e => {
@@ -577,7 +589,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   ["cell", "boost", "shuffle", "bg", "edge", "reach", "sens", "hold", "limb"].forEach(id => $(id).addEventListener("input", readControls));
   $("mode").addEventListener("change", readControls);
   // Start fetching TensorFlow.js as soon as someone reaches for the menu, before they pick a person mode.
-  const prefetchTf = () => { if (!window.tf && !segLoading) loadScript(TF_URL).catch(() => {}); };
+  const prefetchTf = () => { loadTf().catch(() => {}); };
   $("mode").addEventListener("pointerdown", prefetchTf, { once: true });
   $("mode").addEventListener("focus", prefetchTf, { once: true });
   $("quality").addEventListener("change", () => { resetSeg(); if (segReady) warmUp(); });
@@ -780,7 +792,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   }
 
   // Frame-by-frame export (used in person modes): every frame gets its own mask, so nothing lags.
-  const MUXER_URL = "https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.js";
+  const MUXER_URL = "vendor/mp4-muxer.js";
   let stopStepped = false;
   function seekTo(t) {
     return new Promise(res => {
