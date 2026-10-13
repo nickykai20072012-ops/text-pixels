@@ -40,10 +40,8 @@ header > p { margin: 0; color: var(--muted); }
 #out { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; }
 .tag { position: absolute; top: 10px; left: 10px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; background: rgba(13,16,20,.8); color: var(--muted); padding: 4px 8px; border-radius: 3px; }
 .tag.rec { color: var(--rec); }
-.busy { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; background: rgba(13,16,20,.55); color: var(--fg); font-family: var(--font-mono); font-size: 12px; letter-spacing: .04em; text-align: center; padding: 16px; }
-.spin { width: 44px; height: 44px; border-radius: 50%; border: 4px solid rgba(255,255,255,.18); border-top-color: var(--accent); animation: spin .8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2.4s; } }
+.busy { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; background: rgba(13,16,20,.55); color: var(--fg); font-family: var(--font-mono); font-size: 14px; font-weight: 600; letter-spacing: .08em; text-align: center; padding: 16px; }
+
 .tag.rec::before { content: "● "; }
 
 .transport { display: flex; gap: 10px; align-items: center; }
@@ -106,7 +104,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
         <canvas id="out" width="1280" height="720"></canvas>
         <span class="tag" id="tag">Demo pattern · drop a video</span>
         <div class="busy" id="busy" hidden role="status" aria-live="polite">
-          <div class="spin" aria-hidden="true"></div>
           <span id="busyText">Loading…</span>
         </div>
       </div>
@@ -207,7 +204,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
           <button id="frame">Save frame</button>
         </div>
         <div class="bar"><i id="prog"></i></div>
-        <p class="hint build" id="build">Build 20</p>
+        <p class="hint build" id="build">Build 21</p>
         <p class="hint" id="status">Export records the clip in real time with its audio.</p>
       </div>
     </aside>
@@ -337,8 +334,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       const { done, value } = await withTimeout(rd.read(), 30000, "downloading " + url);
       if (done) break;
       parts.push(value); got += value.length;
-      $("maskHint").textContent = "Downloading the " + label + "… " +
-        (hint ? Math.min(99, Math.round(got / hint * 100)) + "%" : (got / 1048576).toFixed(1) + " MB");
+      $("maskHint").textContent = "Downloading the " + label + "…";
     }
     const buf = new Uint8Array(got);
     let off = 0;
@@ -661,7 +657,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     if (msg === busyShown) return;
     busyShown = msg;
     $("busy").hidden = !msg;
-    if (msg) $("busyText").textContent = msg;
+    if (msg) $("busyText").textContent = "Loading…";
   }
   $("busy").addEventListener("click", () => { busyDismissed = busyShown; $("busy").hidden = true; busyShown = null; });
   document.addEventListener("input", () => { dirty = true; });
