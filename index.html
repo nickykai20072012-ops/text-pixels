@@ -307,16 +307,22 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   async function fetchBytes(url, label) {
     const r = await fetch(url);
     if (!r.ok) throw new Error("couldn't download " + url + " (" + r.status + ")");
-    const total = +r.headers.get("content-length") || 0;
-    if (!r.body || !total) return new Uint8Array(await r.arrayBuffer());
-    const buf = new Uint8Array(total), rd = r.body.getReader();
+    // content-length can be the compressed size (GitHub Pages gzips), so it's only a progress hint:
+    // collect the chunks as they come and join them at the end.
+    const hint = +r.headers.get("content-length") || 0;
+    if (!r.body) return new Uint8Array(await r.arrayBuffer());
+    const rd = r.body.getReader(), parts = [];
     let got = 0;
     for (;;) {
       const { done, value } = await rd.read();
       if (done) break;
-      buf.set(value, got); got += value.length;
-      $("maskHint").textContent = "Downloading the " + label + "… " + Math.round(got / total * 100) + "%";
+      parts.push(value); got += value.length;
+      $("maskHint").textContent = "Downloading the " + label + "… " +
+        (hint ? Math.min(99, Math.round(got / hint * 100)) + "%" : (got / 1048576).toFixed(1) + " MB");
     }
+    const buf = new Uint8Array(got);
+    let off = 0;
+    for (const p of parts) { buf.set(p, off); off += p.length; }
     return buf;
   }
   // Models are either embedded in the page (artifact build) or served next to it (site build).
