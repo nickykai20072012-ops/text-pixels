@@ -207,6 +207,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
           <button id="frame">Save frame</button>
         </div>
         <div class="bar"><i id="prog"></i></div>
+        <p class="hint build" id="build">Build 19</p>
         <p class="hint" id="status">Export records the clip in real time with its audio.</p>
       </div>
     </aside>
@@ -618,7 +619,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   }
 
   let exporting = false, dirty = true, videoLoading = false, buffering = false, awaitingMask = true, lastMode = 0;
-  let maskWaitStart = 0, segBusySince = 0, busyDismissed = null, pendingMsg = null, pendingSince = 0;
+  let maskWaitStart = 0, segBusySince = 0, busyDismissed = null, pendingMsg = null, pendingSince = 0, rawMsg = null, rawSince = 0;
   vid.addEventListener("waiting", () => { buffering = true; });
   ["playing", "canplay", "seeked", "pause"].forEach(ev => vid.addEventListener(ev, () => { buffering = false; }));
   // Spinner over the monitor whenever something is loading, so a still frame never looks broken.
@@ -629,13 +630,14 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     // A detection pass that never returns shouldn't freeze person mode: let the next frame try again.
     if (segBusy && segBusySince && now - segBusySince > 10000) { segBusy = false; segBusySince = 0; }
     const vidPending = hasVideo && !vid.error && vid.readyState < 2;
+    // Only show the spinner for things with a clear end: the detector loading, and the first person search.
     let msg = null;
     if (exporting) msg = null;
-    else if (videoLoading) msg = "Loading video…";
-    else if (vidPending) msg = vid.paused ? "Tap ▶ below to start the video" : "Loading video…";
     else if (vals.mode > 0 && !segReady && !segFailed) msg = $("maskHint").textContent.replace(/\.$/, "") || "Loading the person detector…";
     else if (vals.mode > 0 && segReady && awaitingMask && now - maskWaitStart < 15000) msg = "Finding the person…";
-    else if (buffering && hasVideo && !vid.paused && vid.readyState < 3) msg = "Buffering…";
+    // Hard stop: never leave the same message up for more than 20 s (download % keeps changing, so it isn't cut off).
+    if (msg !== rawMsg) { rawMsg = msg; rawSince = now; }
+    if (msg && now - rawSince > 20000) msg = null;
     // Brief hiccups (a loop point, a busy frame) shouldn't flash the spinner: wait until it's lasted a moment.
     const instant = msg && /detector|model|Preparing/.test(msg);
     if (msg !== pendingMsg) { pendingMsg = msg; pendingSince = now; }
