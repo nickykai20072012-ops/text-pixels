@@ -1613,6 +1613,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   let model = null, segReady = false, segBusy = false, segLoading = null, segFailed = false;
   let rec = null, prevMask = null, maskBytes = new Uint8Array(4);
   let pose = null, kps = null;
+  const segIn = document.createElement("canvas"), segInCtx = segIn.getContext("2d", { willReadFrequently: true });
   const limbCanvas = document.createElement("canvas"), limbCtx = limbCanvas.getContext("2d", { willReadFrequently: true });
   function loadScript(src) {
     return new Promise((res, rej) => {
@@ -1635,6 +1636,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       if (!window.tf) await loadScript(TF_URL);
       stage = "starting the GPU backend";
       try { await tf.setBackend("webgl"); } catch (e) { await tf.setBackend("cpu"); }
+      try { tf.env().set("WEBGL_DELETE_TEXTURE_THRESHOLD", 0); } catch (e) {}
       await tf.ready();
       stage = "reading the model";
       const j = JSON.parse(document.getElementById("seg-model").textContent);
@@ -1729,8 +1731,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       const sw = source.videoWidth || source.width, sh = source.videoHeight || source.height;
       const k = q / Math.max(sw, sh);
       const w = Math.max(32, Math.round(sw * k / 16) * 16), h = Math.max(32, Math.round(sh * k / 16) * 16);
-      const frame = tf.browser.fromPixels(source);
-      const src = tf.tidy(() => tf.image.resizeBilinear(frame.toFloat().div(255), [h, w]).expandDims(0));
+      if (segIn.width !== w || segIn.height !== h) { segIn.width = w; segIn.height = h; }
+      segInCtx.drawImage(source, 0, 0, w, h);
+      const frame = tf.browser.fromPixels(segIn);
+      const src = tf.tidy(() => frame.toFloat().div(255).expandDims(0));
       try { if (pose && vals.limb > 0) await detectPose(frame); } finally { frame.dispose(); }
       outs = await runModel(src, q > 256 ? 0.75 : 1);
       const limbs = drawLimbs(w, h, vals.limb);
@@ -1767,6 +1771,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       if (mask) mask.dispose();
     }
   }
+
+  out.addEventListener("webglcontextlost", e => {
+    e.preventDefault();
+    status("Your device ran out of graphics memory. Reload the page, then try Fast detection quality or a lower-resolution clip.", true);
+  });
 
   // ---------- glyph atlas ----------
   let glyphCount = 1;
@@ -1825,8 +1834,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   let charTimer; $("chars").addEventListener("input", () => { clearTimeout(charTimer); charTimer = setTimeout(buildAtlas, 150); });
   readControls();
 
+  const IS_PHONE = window.matchMedia && matchMedia("(pointer: coarse)").matches;
+  const MAX_SIDE = IS_PHONE ? 1920 : 3840;
   function setSize(w, h) {
-    const scale = Math.min(1, 3840 / Math.max(w, h));
+    const scale = Math.min(1, MAX_SIDE / Math.max(w, h));
     out.width = Math.round(w * scale / 2) * 2; out.height = Math.round(h * scale / 2) * 2;
     $("monitor").style.aspectRatio = `${out.width} / ${out.height}`;
     gl.viewport(0, 0, out.width, out.height);
@@ -1834,7 +1845,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 
   const snap = document.createElement("canvas"), snapCtx = snap.getContext("2d");
   function snapshot(src) {
-    const w = src.videoWidth || src.width, h = src.videoHeight || src.height;
+    const w = out.width, h = out.height;
     if (snap.width !== w || snap.height !== h) { snap.width = w; snap.height = h; }
     snapCtx.drawImage(src, 0, 0, w, h);
     return snap;
@@ -1849,7 +1860,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
       if (step !== lastShuffleStep) { lastShuffleStep = step; seed = step % 100000; }
     }
     gl.uniform2f(u.res, out.width, out.height);
-    gl.uniform1f(u.cell, vals.cell * out.width / (source.videoWidth || source.width));
+    gl.uniform1f(u.cell, vals.cell * out.width / (hasVideo ? vid.videoWidth : demo.width));
     gl.uniform1f(u.boost, vals.boost); gl.uniform1f(u.bg, vals.bg);
     gl.uniform1f(u.seed, seed); gl.uniform1f(u.count, glyphCount);
     gl.uniform1f(u.mode, useMask ? vals.mode : 0);
