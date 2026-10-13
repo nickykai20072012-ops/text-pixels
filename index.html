@@ -55,6 +55,9 @@ header > p { margin: 0; color: var(--muted); }
 .hint { color: var(--muted); font-size: 12px; margin: 0; }
 .brand { display: grid; gap: 2px; }
 .credit { color: var(--muted); font-size: 12px; margin: 0; }
+.credit a { color: var(--muted); text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
+.credit a:hover { color: var(--fg); }
+.ig { font: 700 9px/1 var(--font-mono); color: #fff; border: 1.5px solid #fff; border-radius: 4px; padding: 2px 3px; letter-spacing: .04em; }
 .credit strong { color: var(--fg); font-weight: 600; }
 .check { display: flex; gap: 8px; align-items: center; font-weight: 500; cursor: pointer; }
 .check input { accent-color: var(--accent); width: 16px; height: 16px; }
@@ -86,7 +89,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   <header>
     <div class="brand">
       <h1>TEXT<span>/</span>PIXELS</h1>
-      <p class="credit">Made by <strong>Nickolas Heise</strong></p>
+      <p class="credit"><strong>Nickolas Heise</strong> - <a href="https://www.instagram.com/iclimbtrees2012/" target="_blank" rel="noopener"><span class="ig">IG</span>@iclimbtrees2012</a></p>
     </div>
     <p>Every block of your video becomes a random character in that block's colour.</p>
   </header>
